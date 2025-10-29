@@ -53,6 +53,13 @@ DELETION_MUTATIONS = {
             }
         }
     """,
+    "THIRD_PARTY_SERVICE_ENTITY": """
+        mutation DeleteGenericEntity($guids: [EntityGuid!]!) {
+            entityDelete(forceDelete: true, guids: $guids) {
+                deletedEntities
+            }
+        }
+    """,
     # Add more mutations based on your search needs (e.g., WORKLOAD_ENTITY, ALERT_CONDITION_ENTITY)
 }
 
@@ -75,10 +82,10 @@ def execute_graphql(query, variables=None, api_key=None, max_retries=3):
             if 'errors' in data:
                 # Filter out specific GraphQL errors that prevent retries
                 print(f"[ERROR] GraphQL Errors on attempt {attempt + 1}: {data['errors']}")
-                
+
                 # Simple check for transient errors vs permission/syntax errors
                 is_transient_error = any("timeout" in str(e).lower() for e in data['errors'])
-                
+
                 if is_transient_error and attempt < max_retries - 1:
                     wait_time = 2 ** attempt
                     print(f"Retrying in {wait_time}s...")
@@ -86,7 +93,7 @@ def execute_graphql(query, variables=None, api_key=None, max_retries=3):
                     continue
                 # If not transient or max retries reached, return the error
                 return data
-                
+
             return data
 
         except requests.exceptions.RequestException as e:
@@ -103,14 +110,14 @@ def execute_graphql(query, variables=None, api_key=None, max_retries=3):
 def bulk_delete_entities(api_key, account_id, entity_query_string):
     """Main function to perform the two-step bulk deletion."""
     print(f"--- Step 1: Searching for entities matching: {entity_query_string} (Account ID: {account_id}) ---")
-    
+
     # 1. Execute the Entity Search Query
     # Define the variables dynamically based on the input query string
     search_variables = {"entityQuery": entity_query_string}
-    
+
     # Pass the API key to the execution function
     search_data = execute_graphql(ENTITY_SEARCH_QUERY, search_variables, api_key)
-    
+
     if not search_data or not search_data.get('data'):
         print("Failed to retrieve search results or no 'data' in response.")
         return
@@ -121,7 +128,7 @@ def bulk_delete_entities(api_key, account_id, entity_query_string):
         return
 
     entities = search_data['data']['actor']['entitySearch']['results']['entities']
-    
+
     if not entities:
         print("No entities found matching the criteria. Nothing to delete.")
         return
@@ -130,9 +137,9 @@ def bulk_delete_entities(api_key, account_id, entity_query_string):
 
     # 2. Loop through entities and execute deletion mutation
     print("\n--- Step 2: Executing Deletion Mutations ---")
-    
+
     deleted_count = 0
-    
+
     for entity in entities:
         guid = entity['guid']
         name = entity['name']
@@ -144,17 +151,17 @@ def bulk_delete_entities(api_key, account_id, entity_query_string):
         if not mutation_query:
             print(f"[SKIP] No specific mutation defined for type {entity_type} (Entity: {name}, GUID: {guid}). Skipping.")
             continue
-            
+
         print(f"   -> Deleting {entity_type} '{name}' ({guid})...", end=" ")
 
         # Prepare variables: entityDelete requires the GUID to be passed in a list
         if entity_type == "DASHBOARD_ENTITY":
              # dashboardDelete expects a single scalar 'guid'
-            deletion_variables = {"guid": guid} 
+            deletion_variables = {"guid": guid}
         else:
             # entityDelete expects a list of guids 'guids'
-            deletion_variables = {"guids": [guid]} 
-        
+            deletion_variables = {"guids": [guid]}
+
         # Execute the Deletion Mutation, passing the API key
         delete_result = execute_graphql(mutation_query, deletion_variables, api_key)
 
@@ -163,16 +170,16 @@ def bulk_delete_entities(api_key, account_id, entity_query_string):
         error_msg = "Deletion failed (check permissions/manual deletion status)." # Default error
 
         if delete_result and 'errors' not in delete_result:
-            
+
             # Case 1: Dashboard deletion check
             if entity_type == "DASHBOARD_ENTITY" and delete_result['data']['dashboardDelete']['status'] == "SUCCESS":
                  is_successful = True
-            
+
             # Case 2: Generic entity deletion check (APM, Infra, etc.)
             elif 'entityDelete' in delete_result['data']:
                 # 'deletedEntities' is now a list of GUID strings.
                 deleted_guids = delete_result['data']['entityDelete'].get('deletedEntities', [])
-                
+
                 # Check if the GUID string is directly present in the list of strings.
                 if guid in deleted_guids:
                     is_successful = True
@@ -190,7 +197,7 @@ def bulk_delete_entities(api_key, account_id, entity_query_string):
             # If we failed due to a top-level GraphQL error (e.g., syntax, permission)
             if delete_result and delete_result.get('errors'):
                 error_msg = delete_result['errors'][0]['message']
-            
+
             print(f"FAILED. Error: {error_msg}")
 
     print(f"\n--- Deletion Complete: {deleted_count} of {len(entities)} entities successfully deleted. ---")
