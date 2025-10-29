@@ -37,7 +37,6 @@ DELETION_MUTATIONS = {
             }
         }
     """,
-    # FIX: Removed the nested { guid } selection. It now returns a list of scalar GUID strings.
     "APM_APPLICATION_ENTITY": """
         mutation DeleteGenericEntity($guids: [EntityGuid!]!) {
             entityDelete(guids: $guids) {
@@ -45,7 +44,6 @@ DELETION_MUTATIONS = {
             }
         }
     """,
-    # FIX: Removed the nested { guid } selection. It now returns a list of scalar GUID strings.
     "INFRASTRUCTURE_HOST_ENTITY": """
         mutation DeleteGenericEntity($guids: [EntityGuid!]!) {
             entityDelete(forceDelete: true, guids: $guids) {
