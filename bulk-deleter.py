@@ -105,9 +105,11 @@ def execute_graphql(query, variables=None, api_key=None, max_retries=3):
     return None
 
 
-def bulk_delete_entities(api_key, account_id, entity_query_string):
+def bulk_delete_entities(api_key, account_id, entity_query_string, force_delete=False):
     """Main function to perform the two-step bulk deletion."""
     print(f"--- Step 1: Searching for entities matching: {entity_query_string} (Account ID: {account_id}) ---")
+    if force_delete:
+        print("--- Force delete mode enabled ---")
 
     # 1. Execute the Entity Search Query
     # Define the variables dynamically based on the input query string
@@ -149,6 +151,17 @@ def bulk_delete_entities(api_key, account_id, entity_query_string):
         if not mutation_query:
             print(f"[SKIP] No specific mutation defined for type {entity_type} (Entity: {name}, GUID: {guid}). Skipping.")
             continue
+
+        # If force_delete is enabled and entity type uses entityDelete mutation, modify the mutation
+        if force_delete and entity_type != "DASHBOARD_ENTITY":
+            # Replace the mutation to include forceDelete: true
+            mutation_query = """
+        mutation DeleteGenericEntity($guids: [EntityGuid!]!) {
+            entityDelete(forceDelete: true, guids: $guids) {
+                deletedEntities
+            }
+        }
+    """
 
         print(f"   -> Deleting {entity_type} '{name}' ({guid})...", end=" ")
 
@@ -222,14 +235,19 @@ def parse_args():
         required=True,
         help="The full NerdGraph entitySearch query string (e.g., \"name LIKE 'staging-app%' AND domain='APM'\"). NOTE: Use quotes around the query if it contains spaces or special characters."
     )
+    parser.add_argument(
+        '-f', '--force-delete',
+        action='store_true',
+        help='Force delete entities (adds forceDelete: true to entityDelete mutations). Note: Dashboard entities do not support force delete.'
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
     try:
-        # Pass the new query argument to the main function
-        bulk_delete_entities(args.api_key, args.account_id, args.query)
+        # Pass the new query argument and force_delete flag to the main function
+        bulk_delete_entities(args.api_key, args.account_id, args.query, args.force_delete)
     except Exception as e:
         print(f"\nAn unrecoverable error occurred: {e}", file=sys.stderr)
         sys.exit(1)
