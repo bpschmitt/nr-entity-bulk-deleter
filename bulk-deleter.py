@@ -19,6 +19,7 @@ query FindMatchingEntities($entityQuery: String!) {
           name
           entityType
           domain
+          accountId
         }
       }
     }
@@ -133,14 +134,39 @@ def bulk_delete_entities(api_key, account_id, entity_query_string, force_delete=
         print("No entities found matching the criteria. Nothing to delete.")
         return
 
-    print(f"Found {len(entities)} entities to delete.")
+    # Filter entities to only include those from the specified account
+    filtered_entities = []
+    skipped_entities = []
+    
+    for entity in entities:
+        entity_account_id = entity.get('accountId')
+        if entity_account_id is None:
+            # If accountId is not available, skip for safety
+            skipped_entities.append((entity.get('name', 'Unknown'), entity.get('guid', 'Unknown'), 'Account ID not available'))
+        elif entity_account_id != account_id:
+            # Entity belongs to a different account
+            skipped_entities.append((entity.get('name', 'Unknown'), entity.get('guid', 'Unknown'), f'Account ID mismatch: {entity_account_id}'))
+        else:
+            # Entity belongs to the specified account
+            filtered_entities.append(entity)
+    
+    if skipped_entities:
+        print(f"\n[WARNING] Skipping {len(skipped_entities)} entities that do not belong to account {account_id}:")
+        for name, guid, reason in skipped_entities:
+            print(f"  - {name} ({guid}): {reason}")
+    
+    if not filtered_entities:
+        print(f"No entities found in account {account_id}. Nothing to delete.")
+        return
+    
+    print(f"Found {len(filtered_entities)} entities in account {account_id} to delete.")
 
     # 2. Loop through entities and execute deletion mutation
     print("\n--- Step 2: Executing Deletion Mutations ---")
 
     deleted_count = 0
 
-    for entity in entities:
+    for entity in filtered_entities:
         guid = entity['guid']
         name = entity['name']
         entity_type = entity['entityType']
@@ -211,7 +237,7 @@ def bulk_delete_entities(api_key, account_id, entity_query_string, force_delete=
 
             print(f"FAILED. Error: {error_msg}")
 
-    print(f"\n--- Deletion Complete: {deleted_count} of {len(entities)} entities successfully deleted. ---")
+    print(f"\n--- Deletion Complete: {deleted_count} of {len(filtered_entities)} entities successfully deleted. ---")
 
 def parse_args():
     """Parses command line arguments."""
